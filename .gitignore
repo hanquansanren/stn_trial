@@ -4,6 +4,7 @@ target.jpg/
 mnist_data/
 checkpoint/
 dataset/
+temp_img/
 demo/
 image/
 gif

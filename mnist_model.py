@@ -12,6 +12,9 @@ from tps_grid_gen import TPSGridGen
 
 class CNN(nn.Module):
     def __init__(self, num_output):
+        '''
+        num_output:分类器的类别数
+        '''
         super(CNN, self).__init__()
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
@@ -25,6 +28,8 @@ class CNN(nn.Module):
         x = x.view(-1, 320)
         x = F.relu(self.fc1(x))
         x = F.dropout(x, training=self.training)
+        # 若设置.train()，self.training=True
+        # 若设置.eval()，self.training=False
         x = self.fc2(x)
         return x
 
@@ -35,14 +40,13 @@ class ClsNet(nn.Module):
         self.cnn = CNN(10)
 
     def forward(self, x):
-        return F.log_softmax(self.cnn(x))
+        return F.log_softmax(self.cnn(x),dim=1) 
 
 class BoundedGridLocNet(nn.Module):
-
     def __init__(self, grid_height, grid_width, target_control_points):
         super(BoundedGridLocNet, self).__init__()
         self.cnn = CNN(grid_height * grid_width * 2)
-
+        # 均匀初始化的方法
         bias = torch.from_numpy(np.arctanh(target_control_points.numpy()))
         bias = bias.view(-1)
         self.cnn.fc2.bias.data.copy_(bias)
@@ -54,12 +58,11 @@ class BoundedGridLocNet(nn.Module):
         return points.view(batch_size, -1, 2)
 
 class UnBoundedGridLocNet(nn.Module):
-
     def __init__(self, grid_height, grid_width, target_control_points):
         super(UnBoundedGridLocNet, self).__init__()
         self.cnn = CNN(grid_height * grid_width * 2)
-
-        bias = target_control_points.view(-1)
+        # 均匀初始化的方法
+        bias = target_control_points.view(-1) # (32,1) (X,Y,X,Y,X,Y,...) # 行序优先
         self.cnn.fc2.bias.data.copy_(bias)
         self.cnn.fc2.weight.data.zero_()
 
@@ -81,8 +84,8 @@ class STNClsNet(nn.Module):
             np.arange(-r1, r1 + 0.00001, 2.0  * r1 / (args.grid_height - 1)),
             np.arange(-r2, r2 + 0.00001, 2.0  * r2 / (args.grid_width - 1)),
         )))
-        Y, X = target_control_points.split(1, dim = 1)
-        target_control_points = torch.cat([X, Y], dim = 1)
+        Y, X = target_control_points.split(1, dim = 1) # 默认列序优先
+        target_control_points = torch.cat([X, Y], dim = 1)# 列序优先变为行序优先 (16,2)
 
         GridLocNet = {
             'unbounded_stn': UnBoundedGridLocNet,
@@ -94,20 +97,21 @@ class STNClsNet(nn.Module):
 
         self.cls_net = ClsNet()
 
-    def forward(self, x):
+    def forward(self, x, bg=None):
         batch_size = x.size(0)
-        source_control_points = self.loc_net(x)
-        source_coordinate = self.tps(source_control_points)
+        source_control_points = self.loc_net(x) # pred pts
+        source_coordinate = self.tps(source_control_points) # BM output: [64, 784, 2]
         grid = source_coordinate.view(batch_size, self.args.image_height, self.args.image_width, 2)
-        transformed_x = grid_sample(x, grid)
+        
+        transformed_x = grid_sample(x, grid, canvas = bg ) # [64, 1, 28, 28]
         logit = self.cls_net(transformed_x)
         return logit
 
 def get_model(args):
     if args.model == 'no_stn':
         print('create model without STN')
-        model = ClsNet()
+        model = ClsNet() # 实例化
     else:
         print('create model with STN')
-        model = STNClsNet(args)
+        model = STNClsNet(args) # 实例化
     return model

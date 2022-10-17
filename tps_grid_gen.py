@@ -7,6 +7,7 @@ from torch.autograd import Function, Variable
 
 # phi(x1, x2) = r^2 * log(r), where r = ||x1 - x2||_2
 def compute_partial_repr(input_points, control_points):
+    # 求逆矩阵
     N = input_points.size(0)
     M = control_points.size(0)
     pairwise_diff = input_points.view(N, 1, 2) - control_points.view(1, M, 2)
